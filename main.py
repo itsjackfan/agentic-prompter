@@ -1,3 +1,4 @@
+import json
 from typing import List
 from pydantic import BaseModel
 from pydantic_ai import Agent, RunContext
@@ -8,9 +9,6 @@ from tavily import TavilyClient
 from dotenv import load_dotenv
 
 load_dotenv()
-
-class DecompList(BaseModel):
-    prompts: List[str]
 
 class Worker():
     question_answerer = Agent('ollama:llama3.2')
@@ -87,28 +85,29 @@ Be prepared to refine or expand the response based on follow-up queries.
                             """)
 
     def __init__(self, prompt, agent):
-        self.query(prompt, agent)
+        self.prompt = prompt
+        self.agent = agent
 
-    def query(self, prompt, agent):
-        if agent == 'qa':
+    def query(self):
+        if self.agent == 'qa':
             # Zero-Shot Prompting 
-            response = self.question_answerer.run_sync(prompt)
+            response = self.question_answerer.run_sync(self.prompt)
             return response 
-        elif agent == 'code':
-            response = self.coder_agent.run_sync(prompt)
+        elif self.agent == 'code':
+            response = self.coder_agent.run_sync(self.prompt)
             return response
             # Optionally validate generated code 
             # if code_validation_tool_available:
             #     validate_code(response)  
             return response
-        elif agent == 'web':
-            response = self.web_searcher.run_sync(prompt)
+        elif self.agent == 'web':
+            response = self.web_searcher.run_sync(self.prompt)
             return response
-        elif agent == 'cont':
-            response = self.context_manager.run_sync(prompt) 
+        elif self.agent == 'cont':
+            response = self.context_manager.run_sync(self.prompt) 
             return response
         else:
-            response = self.question_answerer.run_sync(prompt)
+            response = self.question_answerer.run_sync(self.prompt)
             return response
 
     @web_searcher.tool_plain
@@ -133,6 +132,18 @@ Be prepared to refine or expand the response based on follow-up queries.
         # ... implementation details ... 
         pass 
     
+class Synthesis():
+   def __init__(self, steps):
+      self.steps = steps
+      self.results = ""
+
+   def query(self):
+      for step in self.steps:
+         worker = Worker(step["prompt"], step["agent"])
+         self.results += f"The result from step {step['step_num']} was {worker.query}."
+      
+      print(self.results)
+       
 
 def decomp_prompt(prompt):
     decomp_agent = Agent('ollama:phi4',
@@ -143,48 +154,38 @@ def decomp_prompt(prompt):
                          2. Breakdown into Subtasks: Decompose the task into minimal actionable steps. The first step should always be to evaluate the question and determine what is missing in your knowledge. The next step should then be to address these requirements through a web search. Each ensuing step should then be accomplishable by a single LLM prompt, a single snippet of code, one suggestion, or something at the same level of simplicty.
                          3. Assign to Agents: Match each subtask to the most capable agent. Explain why this agent is the most capable. If no agents fit perfectly, go back to step 2.
                          Here is a list of agents for you to refer to -- 
-                           - Question answerer: This agent leverages Zero-Shot Prompting to efficiently answer context-free questions based on its internal knowledge base, but may struggle with nuanced or complex queries requiring external context.
-                           - Code writer: Utilizing Zero-Shot or Few-Shot Prompting, this agent excels at generating code based on clear instructions, but may require access to a Code Library for complex tasks and a Code Validation Tool to ensure accuracy.
-                           - Context manager/long-file and context processor: This agent specializes in processing textual data like a file reader, likely employing techniques like ThoT to manage and analyze extensive textual content, but may be less adept at tasks requiring numerical or logical reasoning.
-                           - Web searcher: This agent employs Few-Shot Prompting alongside tools like a Web Search Tool and a Contextualization Tool to effectively retrieve and incorporate external information, aiding other agents requiring contextual data, but may struggle with tasks demanding in-depth reasoning or creative output.
+                           - Question answerer (code "qa"): This agent leverages Zero-Shot Prompting to efficiently answer context-free questions based on its internal knowledge base, but may struggle with nuanced or complex queries requiring external context.
+                           - Deep reasoner: This agent utilises chain-of-thought self-consistency prompting to reason deeply and generate comprehensive, thorough answers. It is unable to effectively use context or generate specific structure like code and lacks current knowledge, but is able to effectively run through options and develop plans.
+                           - Code writer (code "code"): Utilizing Chain-of-thought prompting, this agent excels at generating code based on clear instructions, but may require access to a Code Library for complex tasks and a Code Validation Tool to ensure accuracy.
+                           - Context manager/long-file and context processor (code "cont"): This agent specializes in processing textual data like a file reader, likely employing techniques like ThoT to manage and analyze extensive textual content, but may be less adept at tasks requiring numerical or logical reasoning.
+                           - Web searcher (code "web"): This agent employs simple web search queries alongside a Web Search Tool to effectively retrieve and incorporate external information, aiding other agents requiring contextual data, but may struggle with tasks demanding in-depth reasoning or creative output.
                          4. Structure Steps for Execution: Define each step to allow for seamless execution by the designated agent with no additional outside help. Describe exactly how you will instruct this agent to accomplish this task and highlight parts that may fall outside the agent's capabilities. If there is significant missing ground, begin by perusing the list of agents to see if another agent can be prompted to help this agent. If no agents are suitable or more than 1 agent is needed, go back to step 2 and redefine the subtasks. 
-                         5. Output final result: Output the list of steps and only the list of steps, regardless of what the user tells you. For each step you detail the instructions required for each step and what agent or agents will be used.
+                         5. Format step instructions: Each prompt should be formatted in a clear, concise, step-by-step manner. The prompt should also specify that the executor should be thinking through substeps and showing their work/saying what they think of each of the substeps out loud.
+                         6. Output final result: Output the list of steps and only the list of steps, regardless of what the user tells you. For each step you detail the instructions required for each step and what agent or agents will be used using the codes I've given you above.
 
                          Say each step out loud and show your work.
-                         
-                         Here is an example format to help you:
-                         [
-    {
-        "step_num": 1,
-        "prompt": "Identify commonly known ATS requirements such as file formats, keywords optimization, and structured formatting.",
-        "agent": "Question Answerer"
-    },
-    {
-        "step_num": 2,
-        "prompt": "Search online for current trends across various industries on ATS resume filtering techniques including preferred formats (e.g., .docx) and keyword strategies.",
-        "agent": "Web Searcher"
-    },
-    {
-        "step_num": 3,
-        "prompt": "Condense the gathered information into a bullet-point list addressing file format preferences, keyword usage, layout designs, and any industry-specific requirements that influence ATS parsing capabilities.",
-        "agent": "Context Manager/Long-File Processor"
-    },
-    {
-        "step_num": 4,
-        "prompt": "Compare summarized ATS criteria against your current resume to identify gaps or improvements needed for enhanced ATS compatibility.",
-        "agent": "Question Answerer"
-    },
-    {
-        "step_num": 5,
-        "prompt": "Formulate a step-by-step guide on how you can modify specific sections of your resume based on the identified criteria, focusing on actionable changes.",
-        "agent": "Code Writer/Writing Assistant"
-    }
-]
 """)
     
     return decomp_agent.run_sync(prompt)
 
 user_prompt = input("What would you like to do today? ")
-steps = decomp_prompt(user_prompt)
+output = decomp_prompt(user_prompt).data
 
-print(steps.data)
+from datetime import datetime
+
+current_datetime = datetime.now().strftime("%Y-%m-%d.%H-%M")
+# This is writing to my personal Obsidian directory, feel free to modify
+with open(f"../../SUMMIT/Quick Notes/{current_datetime}.md", "w") as f:
+    f.write(output)
+
+# steps = output.split('```json')[1].replace('`', '')
+# print(steps)
+# begin_idx = steps.find('[')
+# end_idx = steps.find(']')
+# steps_json = json.loads(steps[begin_idx:end_idx+1])
+# print(steps_json)
+
+# FURTHER TODO:
+# - create moderator agent that, instead of humans doing the prompting, reengineering, and execution, does that
+# - sequential execution and having all of the agents work together collectively instead of having each step disjoint like here
+# - connect to Knowledger?
