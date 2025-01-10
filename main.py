@@ -176,6 +176,7 @@ from datetime import datetime
 current_datetime = datetime.now().strftime("%Y-%m-%d.%H-%M")
 # This is writing to my personal Obsidian directory, feel free to modify
 with open(f"../../SUMMIT/Quick Notes/{current_datetime}.md", "w") as f:
+    f.write(f"PROMPT: {user_prompt}\n\n")
     f.write(output)
 
 # steps = output.split('```json')[1].replace('`', '')
