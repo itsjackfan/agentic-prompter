@@ -1,0 +1,24 @@
+html,
+body {
+  margin: 0;
+  font-family: sans-serif;
+}
+ 
+#app {
+  width: 100vw;
+  height: 100vh;
+}
+
+.text-input {
+  padding: 10px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+}
+
+.compute-node {
+  padding: 10px;
+  background: #fff;
+  border: 1px solid #eee;
+  border-radius: 10px;
+}
